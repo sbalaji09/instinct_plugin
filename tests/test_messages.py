@@ -157,3 +157,28 @@ def test_missing_db(tmp_path):
 def test_normalize_handle():
     assert normalize_handle("+1 (805) 555-0100") == normalize_handle("8055550100")
     assert normalize_handle("Bob@Example.com") == "bob@example.com"
+
+
+def test_addressbook_db_resolver(tmp_path):
+    from instinct.adapters.messages import AddressBookDBResolver, ChainResolver
+
+    src = tmp_path / "AddressBook" / "Sources" / "ABC"
+    src.mkdir(parents=True)
+    con = sqlite3.connect(src / "AddressBook-v22.abcddb")
+    con.executescript("""
+        CREATE TABLE ZABCDRECORD (Z_PK INTEGER PRIMARY KEY, ZFIRSTNAME TEXT, ZLASTNAME TEXT, ZNICKNAME TEXT,
+                                  ZORGANIZATION TEXT);
+        CREATE TABLE ZABCDPHONENUMBER (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZFULLNUMBER TEXT);
+        CREATE TABLE ZABCDEMAILADDRESS (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZADDRESS TEXT);
+        INSERT INTO ZABCDRECORD VALUES (1, 'Priya', 'Rao', NULL, NULL), (2, NULL, NULL, NULL, 'Cal Poly IT');
+        INSERT INTO ZABCDPHONENUMBER VALUES (1, 1, '(805) 555-0100'), (2, 2, '+1 805 756 0000');
+        INSERT INTO ZABCDEMAILADDRESS VALUES (1, 1, 'Priya@Example.com');
+    """)
+    con.commit()
+    con.close()
+    r = ChainResolver(MapResolver({}), AddressBookDBResolver(tmp_path / "AddressBook"))
+    assert r.name_for("+18055550100") == "Priya Rao"
+    assert r.name_for("priya@example.com") == "Priya Rao"
+    assert r.name_for("8057560000") == "Cal Poly IT"
+    assert r.name_for("+15550000000") is None
+    assert AddressBookDBResolver(tmp_path / "missing").name_for("+18055550100") is None

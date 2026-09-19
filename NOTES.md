@@ -91,6 +91,7 @@ These need permissions or logins the build environment didn't have. Run
 | **attributedBody typedstream** (NSArchiver format, deprecated but stable for decades) | Low risk. If Apple switches to keyed archives, the decoder will raise `TypedStreamError` and the text will show as `None`, not garbage. |
 | **Cua Driver internals**: SkyLight `SLEventPostToPid` / `SLPSPostEventRecordTo` (private framework, the "focus-without-raise" recipe from yabai) | The most likely thing to break on a macOS update. The AX-action path uses public APIs and is sturdier. |
 | **CGEventPostToPid, ScreenCaptureKit, Accessibility, Contacts** | Public APIs; low risk. |
+| **AddressBook-v22.abcddb** (private Core Data schema), the fallback for contact names | Medium risk; if it changes, names fall back to raw handles. |
 | **Chrome's cookie DB location** (`Default/Network/Cookies`), used only by `doctor` and the router to detect logins | Low risk; both old and new paths are checked. |
 
 ## Security notes

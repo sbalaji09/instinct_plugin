@@ -83,8 +83,16 @@ def check_contacts() -> Check:
     label = names.get(int(status), str(status))
     if int(status) in (3, 4):
         return Check("Contacts", True, label)
+    ab = Path("~/Library/Application Support/AddressBook").expanduser()
+    try:
+        if any(ab.rglob("AddressBook-v22.abcddb")):
+            return Check("Contacts", True, f"{label} via Contacts API; names read from the local "
+                                           "AddressBook database instead (Full Disk Access)")
+    except OSError:
+        pass
     fix = (
-        "Optional (names instead of raw phone numbers). Run `uv run instinct contacts-auth` "
+        "Optional (names instead of raw phone numbers). Granting Full Disk Access also covers this. "
+        "Or run `uv run instinct contacts-auth` "
         "to trigger the prompt, or System Settings → Privacy & Security → Contacts.\n"
         f"      open '{PRIVACY_PANE}Contacts'"
     )

@@ -44,7 +44,7 @@ Grant them to that app, then quit and reopen it.
 | Permission | Needed for | Where |
 |---|---|---|
 | Full Disk Access | Messages (reading chat.db) | Privacy & Security → Full Disk Access |
-| Contacts (optional) | Showing names instead of phone numbers | `uv run instinct contacts-auth` |
+| Contacts (optional) | Showing names instead of phone numbers | Covered by Full Disk Access (reads the local AddressBook DB); or `uv run instinct contacts-auth` |
 | Accessibility + Screen Recording | GUI lane only | Grant to **CuaDriver.app** (`cua-driver permissions grant`) |
 
 ### Canvas

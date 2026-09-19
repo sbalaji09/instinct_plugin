@@ -201,6 +201,84 @@ class MacContactsResolver(ContactResolver):
             return self._map.get(normalize_handle(handle))
 
 
+class AddressBookDBResolver(ContactResolver):
+    """Read names from the local Contacts database (needs only Full Disk Access).
+
+    Command-line hosts often can't trigger the Contacts permission prompt, so this
+    reads ~/Library/Application Support/AddressBook/**/AddressBook-v22.abcddb
+    (private Core Data schema) from private read-only copies, like chat.db.
+    """
+
+    TTL_S = 600
+
+    def __init__(self, root: Path | None = None):
+        self.root = root or Path("~/Library/Application Support/AddressBook").expanduser()
+        self._map: dict[str, str] | None = None
+        self._loaded_at = 0.0
+        self._lock = threading.Lock()
+
+    def _databases(self) -> list[Path]:
+        try:
+            return sorted(self.root.rglob("AddressBook-v22.abcddb"))
+        except OSError:
+            return []
+
+    @staticmethod
+    def _read(db: Path, mapping: dict[str, str]) -> None:
+        with tempfile.TemporaryDirectory(prefix="instinct-ab-") as tmp:
+            for suffix in ("", *SIDECARS):
+                src = Path(f"{db}{suffix}")
+                if src.exists():
+                    shutil.copyfile(src, Path(tmp) / f"ab.db{suffix}")
+            con = sqlite3.connect(f"file:{Path(tmp) / 'ab.db'}?mode=ro", uri=True)
+            try:
+                cols = {r[1] for r in con.execute("PRAGMA table_info(ZABCDRECORD)")}
+                if not {"Z_PK", "ZFIRSTNAME", "ZLASTNAME"} <= cols:
+                    return
+                extra = [c for c in ("ZNICKNAME", "ZORGANIZATION") if c in cols]
+                names = {}
+                for row in con.execute(f"SELECT Z_PK, ZFIRSTNAME, ZLASTNAME{''.join(', ' + c for c in extra)} "
+                                       "FROM ZABCDRECORD"):
+                    full = " ".join(p for p in row[1:3] if p).strip()
+                    full = full or next((p for p in row[3:] if p), None)
+                    if full:
+                        names[row[0]] = full
+                for table, col in (("ZABCDPHONENUMBER", "ZFULLNUMBER"), ("ZABCDEMAILADDRESS", "ZADDRESS")):
+                    try:
+                        for owner, value in con.execute(f"SELECT ZOWNER, {col} FROM {table}"):
+                            if owner in names and value:
+                                mapping.setdefault(normalize_handle(value), names[owner])
+                    except sqlite3.Error:
+                        continue
+            finally:
+                con.close()
+
+    def name_for(self, handle: str | None) -> str | None:
+        if not handle:
+            return None
+        with self._lock:
+            if self._map is None or time.monotonic() - self._loaded_at > self.TTL_S:
+                mapping: dict[str, str] = {}
+                for db in self._databases():
+                    try:
+                        self._read(db, mapping)
+                    except (OSError, sqlite3.Error) as e:
+                        log.warning("address book read failed: %s", type(e).__name__)
+                self._map, self._loaded_at = mapping, time.monotonic()
+            return self._map.get(normalize_handle(handle))
+
+
+class ChainResolver(ContactResolver):
+    def __init__(self, *resolvers: ContactResolver):
+        self.resolvers = resolvers
+
+    def name_for(self, handle: str | None) -> str | None:
+        for r in self.resolvers:
+            if name := r.name_for(handle):
+                return name
+        return None
+
+
 # --------------------------------------------------------------------------- store
 
 
@@ -460,7 +538,8 @@ class MessagesStore:
 def default_store(cfg) -> MessagesStore:
     import atexit
 
-    resolver: ContactResolver = MacContactsResolver() if cfg.messages.resolve_contacts else ContactResolver()
+    resolver: ContactResolver = (ChainResolver(MacContactsResolver(), AddressBookDBResolver())
+                                 if cfg.messages.resolve_contacts else ContactResolver())
     store = MessagesStore(cfg.messages.db_path, resolver, cursor_path=cfg.home / "messages_cursor.json")
     atexit.register(store.snapshot.close)  # remove the private copy of chat.db on exit
     return store
