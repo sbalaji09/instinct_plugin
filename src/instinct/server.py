@@ -12,7 +12,7 @@ import threading
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
@@ -194,6 +194,74 @@ def create_server(cfg: Config | None = None, **overrides: Any) -> MCPServer:
         return svc.gate.propose("ask_claude_desktop",
                                 f"Type this prompt into the Claude desktop app (background) and send it:\n{preview}",
                                 {"prompt": prompt}, lambda: ask_claude_desktop(svc.gui, prompt))
+
+    # ------------------------------------------------------------------ gui (last resort)
+
+    GUI_NOTE = (" Last-resort lane: prefer messages_*/canvas_*/ask_claude. Background only: never moves the "
+                "cursor, steals focus, raises windows or switches Spaces; actions that would need the foreground "
+                "fail with an explicit error. Needs Cua Driver.")
+    GATED = " Side effect: returns a pending action; call confirm_action only after the user approves."
+    ACTION = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True)
+
+    @mcp.tool(description="List on-screen and off-screen app windows (window_id, pid, app, title, Space)."
+                          + GUI_NOTE + TOOL_DESCRIPTION_NOTE, annotations=READ_ONLY)
+    def gui_list_windows(app: str | None = None) -> str:
+        return untrusted("app windows", _call(lambda: svc.gui.list_windows(app)))
+
+    @mcp.tool(description="Accessibility snapshot of an app's window: elements with element_token ids to pass "
+                          "to gui_click/gui_type_text, plus a markdown tree. `query` filters elements."
+                          + GUI_NOTE + TOOL_DESCRIPTION_NOTE, annotations=READ_ONLY)
+    def gui_get_app_state(app: str, query: str | None = None, window_id: int | None = None,
+                          max_elements: int = 300) -> str:
+        state = _call(lambda: svc.gui.get_app_state(app, window_id, query=query, max_elements=max_elements))
+        state.pop("screenshot", None)
+        return untrusted("app UI", state)
+
+    @mcp.tool(description="Screenshot one app window, even if it's covered by other windows." + GUI_NOTE
+                          + TOOL_DESCRIPTION_NOTE, annotations=READ_ONLY)
+    def gui_screenshot_window(app: str, window_id: int | None = None) -> list:
+        meta, png = _call(lambda: svc.gui.screenshot_window(app, window_id))
+        return [untrusted("app screenshot", meta), Image(data=png, format="png")]
+
+    def _where(app: str, window_id: int | None) -> str:
+        w = _call(lambda: svc.gui.resolve_window(app, window_id))
+        return f"{w.get('app_name')} window {w.get('title')!r} (id {w.get('window_id')})"
+
+    @mcp.tool(description="Click (AX press) an element from gui_get_app_state in the background." + GUI_NOTE
+                          + GATED, annotations=ACTION)
+    def gui_click(app: str, element_id: str, window_id: int | None = None) -> str:
+        where = _where(app, window_id)
+        what = svc.gui.describe(app, element_id)
+        return trusted(svc.gate.propose("gui_click", f"Click {what} in {where}",
+                                        {"app": app, "element_id": element_id, "window_id": window_id},
+                                        lambda: svc.gui.click(app, element_id, window_id)))
+
+    @mcp.tool(description="Type text into an app (into element_id if given, else the focused field) in the "
+                          "background." + GUI_NOTE + GATED, annotations=ACTION)
+    def gui_type_text(app: str, text: str, element_id: str | None = None, window_id: int | None = None) -> str:
+        where = _where(app, window_id)
+        into = f" into {svc.gui.describe(app, element_id)}" if element_id else ""
+        preview = text if len(text) <= 200 else text[:200] + "…"
+        return trusted(svc.gate.propose("gui_type_text", f"Type {preview!r}{into} in {where}",
+                                        {"app": app, "text": text, "element_id": element_id},
+                                        lambda: svc.gui.type_text(app, text, element_id, window_id)))
+
+    @mcp.tool(description="Press a key or combo in an app in the background, e.g. 'return', 'cmd+c', "
+                          "'cmd+shift+t'." + GUI_NOTE + GATED, annotations=ACTION)
+    def gui_press_keys(app: str, keys: str, element_id: str | None = None, window_id: int | None = None) -> str:
+        where = _where(app, window_id)
+        return trusted(svc.gate.propose("gui_press_keys", f"Press {keys!r} in {where}",
+                                        {"app": app, "keys": keys, "element_id": element_id},
+                                        lambda: svc.gui.press_keys(app, keys, element_id, window_id)))
+
+    @mcp.tool(description="Scroll an app window or element in the background. direction: up/down/left/right; "
+                          "by: line/page." + GUI_NOTE + GATED, annotations=ACTION)
+    def gui_scroll(app: str, direction: str, amount: int = 3, by: str = "line", element_id: str | None = None,
+                   window_id: int | None = None) -> str:
+        where = _where(app, window_id)
+        return trusted(svc.gate.propose("gui_scroll", f"Scroll {direction} {amount} {by}(s) in {where}",
+                                        {"app": app, "direction": direction, "amount": amount, "by": by},
+                                        lambda: svc.gui.scroll(app, direction, amount, by, element_id, window_id)))
 
     # ------------------------------------------------------------------ router
 
