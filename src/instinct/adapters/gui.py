@@ -7,3 +7,7 @@ def doctor_check(cfg):
     from instinct.doctor import Check
 
     return Check("Cua Driver", None, "GUI lane not integrated yet (build step 7)")
+
+
+def find_driver(cfg):
+    return None

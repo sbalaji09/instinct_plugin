@@ -9,7 +9,7 @@ resolve_contacts = true
 
 [canvas]
 base_url = "https://canvas.calpoly.edu"
-backend = "api"        # "api" (REST + token) or "browser" (logged-in background profile)
+backend = "auto"       # auto (token if set, else browser) | api (token only) | browser (logged-in profile)
 max_retries = 4
 
 [browser]

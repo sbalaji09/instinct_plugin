@@ -94,6 +94,8 @@ def check_contacts() -> Check:
 def check_canvas(cfg: Config) -> Check:
     if cfg.canvas.backend == "browser":
         return Check("Canvas token", None, "backend=browser; token not used")
+    if cfg.canvas.backend == "auto" and not canvas_token():
+        return Check("Canvas token", None, "no token; backend=auto will use the background browser profile")
     if not cfg.canvas.base_url:
         return Check("Canvas token", False, "no [canvas].base_url configured",
                      "Set base_url in ~/.instinct/config.toml (see config.example.toml).")

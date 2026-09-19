@@ -340,12 +340,16 @@ def default_client(cfg) -> CanvasClient:
     """Build the configured Canvas backend (API token by default, browser as fallback)."""
     from instinct.config import canvas_token
 
-    if cfg.canvas.backend == "browser":
-        from instinct.adapters.browser import browser_transport
-
-        return CanvasClient(cfg.canvas.base_url, browser_transport(cfg), max_retries=cfg.canvas.max_retries)
-    token = canvas_token()
-    if not token:
+    backend = cfg.canvas.backend
+    if backend not in ("auto", "api", "browser"):
+        raise CanvasError(f"unknown [canvas].backend {backend!r}")
+    token = canvas_token() if backend != "browser" else None
+    if token:
+        return CanvasClient(cfg.canvas.base_url, TokenTransport(token), max_retries=cfg.canvas.max_retries)
+    if backend == "api":
         raise CanvasAuthError("No Canvas token. Run `uv run instinct set-canvas-token` or set "
-                              "INSTINCT_CANVAS_TOKEN (or set [canvas].backend = \"browser\").")
-    return CanvasClient(cfg.canvas.base_url, TokenTransport(token), max_retries=cfg.canvas.max_retries)
+                              "INSTINCT_CANVAS_TOKEN (or use [canvas].backend = \"auto\").")
+    from instinct.adapters.browser import browser_transport
+
+    log.info("canvas: using background browser profile (no token)")
+    return CanvasClient(cfg.canvas.base_url, browser_transport(cfg), max_retries=cfg.canvas.max_retries)

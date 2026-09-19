@@ -10,7 +10,7 @@ def test_defaults_without_file(tmp_path):
     cfg = load_config(tmp_path / "missing.toml")
     assert cfg.source is None
     assert cfg.claude.default_mode == "api"
-    assert cfg.canvas.backend == "api"
+    assert cfg.canvas.backend == "auto"
 
 
 def test_file_and_env_overrides(tmp_path, monkeypatch):

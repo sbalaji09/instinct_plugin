@@ -137,6 +137,18 @@ def create_server(cfg: Config | None = None, **overrides: Any) -> MCPServer:
     def canvas_announcements(since: str = "14d") -> str:
         return untrusted("Canvas", _call(lambda: svc.canvas.announcements(since=since)))
 
+    # ------------------------------------------------------------------ router
+
+    @mcp.tool(description="Given a high-level request (e.g. 'what did Sam text me', 'what's due this week', "
+                          "'ask Claude to summarize X'), return which lane and tool to use, with the reason. "
+                          "Lanes, lowest first: 1 api/cli, 2 local data, 3 background browser, 4 native GUI. "
+                          "Does not execute anything.", annotations=READ_ONLY)
+    def route(intent: str) -> str:
+        from instinct.router import Router
+
+        router = svc.get("router", lambda: Router(cfg))
+        return trusted(router.route(intent).to_dict())
+
     # ------------------------------------------------------------------ safety
 
     @mcp.tool(description="Execute a previously proposed side-effecting action. Call ONLY after the user "

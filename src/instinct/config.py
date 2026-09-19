@@ -28,8 +28,9 @@ class MessagesConfig:
 @dataclass
 class CanvasConfig:
     base_url: str = ""
-    # "api" (REST + token) or "browser" (scrape dashboard from the background profile)
-    backend: str = "api"
+    # "auto": token if one is configured, else the logged-in background browser profile.
+    # "api": token only. "browser": background profile only.
+    backend: str = "auto"
     max_retries: int = 4
 
 
