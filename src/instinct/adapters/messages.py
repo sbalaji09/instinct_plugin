@@ -458,8 +458,12 @@ class MessagesStore:
 
 
 def default_store(cfg) -> MessagesStore:
+    import atexit
+
     resolver: ContactResolver = MacContactsResolver() if cfg.messages.resolve_contacts else ContactResolver()
-    return MessagesStore(cfg.messages.db_path, resolver, cursor_path=cfg.home / "messages_cursor.json")
+    store = MessagesStore(cfg.messages.db_path, resolver, cursor_path=cfg.home / "messages_cursor.json")
+    atexit.register(store.snapshot.close)  # remove the private copy of chat.db on exit
+    return store
 
 
 __all__ = ["MessagesStore", "MessagesError", "ChatNotFound", "Snapshot", "MapResolver",
