@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+# never commit real config or secrets
+config.toml
+.env
+*.db
+!tests/fixtures/*.db

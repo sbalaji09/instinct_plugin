@@ -1,0 +1,33 @@
+# Copy to ~/.instinct/config.toml (or point $INSTINCT_CONFIG at it).
+# Secrets do NOT go here:
+#   Canvas token  -> `uv run instinct set-canvas-token` (Keychain) or $INSTINCT_CANVAS_TOKEN
+#   Anthropic key -> $ANTHROPIC_API_KEY
+
+[messages]
+db_path = "~/Library/Messages/chat.db"
+resolve_contacts = true
+
+[canvas]
+base_url = "https://canvas.calpoly.edu"
+backend = "api"        # "api" (REST + token) or "browser" (logged-in background profile)
+max_retries = 4
+
+[browser]
+profile_dir = "~/.instinct/chrome-profile"
+chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+cdp_port = 9333
+headless = true         # false = headed but launched in the background, never activated
+response_timeout_s = 180
+
+[claude]
+default_mode = "api"   # api | cli | web | desktop
+model = "claude-opus-5"
+max_tokens = 4096
+claude_cli = "claude"
+
+[gui]
+cua_driver_path = ""    # empty = auto-detect
+
+[safety]
+pending_ttl_s = 600
+log_message_bodies = false
