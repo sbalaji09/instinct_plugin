@@ -184,6 +184,30 @@ def check_chrome_profile(cfg: Config) -> list[Check]:
     return out
 
 
+def check_bridge(cfg: Config) -> list[Check]:
+    """iMessage bridge: needs Automation → Messages (to send) and a logged-in `claude` CLI."""
+    import subprocess
+
+    if not cfg.bridge.chats:
+        return [Check("iMessage bridge", None, "off ([bridge].chats is empty)")]
+    out = []
+    claude = shutil.which(cfg.claude.claude_cli)
+    out.append(Check("Bridge: claude CLI", bool(claude), claude or "not found on PATH",
+                     "" if claude else "Install Claude Code and run `claude` once to log in."))
+    if subprocess.run(["pgrep", "-xq", "Messages"]).returncode != 0:
+        out.append(Check("Bridge: Automation → Messages", None,
+                         "Messages isn't running; checked on first send (macOS will ask once)"))
+        return out
+    r = subprocess.run(["osascript", "-e", 'tell application "Messages" to count of accounts'],
+                       capture_output=True, text=True, timeout=30)
+    ok = r.returncode == 0
+    fix = ("System Settings → Privacy & Security → Automation → enable Messages under the app that runs the "
+           f"bridge.\n      open '{PRIVACY_PANE}Automation'")
+    out.append(Check("Bridge: Automation → Messages", ok, "allowed" if ok else r.stderr.strip()[:120],
+                     "" if ok else fix))
+    return out
+
+
 def run_checks(cfg: Config) -> list[Check]:
     checks = [
         check_full_disk_access(cfg),
@@ -194,6 +218,7 @@ def run_checks(cfg: Config) -> list[Check]:
         check_cua_driver(cfg),
     ]
     checks.extend(check_chrome_profile(cfg))
+    checks.extend(check_bridge(cfg))
     return checks
 
 

@@ -41,7 +41,7 @@ class ChatDB:
 
     def __init__(self, path: Path):
         self.path = path
-        self.con = sqlite3.connect(path)
+        self.con = sqlite3.connect(path, check_same_thread=False)  # the bridge tests write from a worker thread
         self.con.execute("PRAGMA journal_mode=WAL")
         self.con.execute("PRAGMA wal_autocheckpoint=0")
         self.con.executescript(SCHEMA)

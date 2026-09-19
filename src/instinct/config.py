@@ -63,6 +63,21 @@ class SafetyConfig:
 
 
 @dataclass
+class BridgeConfig:
+    # Conversations to watch: the phone number / email / contact name / "chat:N" of the
+    # assistant you text (e.g. Instinct AI). Empty = bridge disabled.
+    chats: list[str] = field(default_factory=list)
+    trigger: str = "@mac"           # a message must start with this to become a task
+    reply_prefix: str = "🖥️ "       # every bridge message starts with this (and is ignored as input)
+    poll_s: float = 2.0
+    approval_timeout_s: int = 600
+    max_tasks_per_hour: int = 20
+    session_idle_min: int = 30      # follow-ups within this window continue the same Claude session
+    model: str = ""                 # empty = your Claude Code default
+    max_turns: int = 40
+
+
+@dataclass
 class Config:
     messages: MessagesConfig = field(default_factory=MessagesConfig)
     canvas: CanvasConfig = field(default_factory=CanvasConfig)
@@ -70,6 +85,7 @@ class Config:
     claude: ClaudeConfig = field(default_factory=ClaudeConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
+    bridge: BridgeConfig = field(default_factory=BridgeConfig)
     home: Path = INSTINCT_HOME
     source: Path | None = None
 

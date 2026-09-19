@@ -65,6 +65,49 @@ def cmd_doctor(_args) -> int:
     return main()
 
 
+def cmd_bridge(args) -> int:
+    from instinct.logs import setup_logging
+
+    cfg = load_config()
+    setup_logging(cfg.ensure_home(), log_bodies=cfg.safety.log_message_bodies)
+    if args.action == "run":
+        from instinct.bridge import run_bridge
+
+        return run_bridge(cfg)
+    return _launch_agent(cfg, args.action)
+
+
+def _launch_agent(cfg, action: str) -> int:
+    import os
+    from pathlib import Path
+
+    from instinct.bridge import LABEL, launch_agent_plist
+
+    plist = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
+    domain = f"gui/{os.getuid()}"
+    if action == "uninstall":
+        subprocess.call(["launchctl", "bootout", f"{domain}/{LABEL}"], stderr=subprocess.DEVNULL)
+        plist.unlink(missing_ok=True)
+        print("Bridge stopped and removed from login items.")
+        return 0
+    if not cfg.bridge.chats:
+        print("Set [bridge].chats in ~/.instinct/config.toml first.", file=sys.stderr)
+        return 1
+    repo = Path(__file__).resolve().parents[2]
+    python = str(Path(sys.executable).resolve())
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    plist.write_text(launch_agent_plist(repo, python, cfg.home))
+    subprocess.call(["launchctl", "bootout", f"{domain}/{LABEL}"], stderr=subprocess.DEVNULL)
+    rc = subprocess.call(["launchctl", "bootstrap", domain, str(plist)])
+    print(f"Installed {plist} (runs at login, restarts if it exits). Log: {cfg.home / 'bridge.log'}")
+    print("launchd runs it without your terminal's permissions, so grant this binary Full Disk Access\n"
+          "(System Settings → Privacy & Security → Full Disk Access → + → ⌘⇧G → paste):\n"
+          f"  {python}\n"
+          "and allow it to control Messages when macOS asks. Then: launchctl kickstart -k "
+          f"{domain}/{LABEL}")
+    return rc
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="instinct")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -77,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     lp = sub.add_parser("login", help="open the background profile visibly once to sign in")
     lp.add_argument("site", help="claude, canvas, or a URL")
     lp.set_defaults(fn=cmd_login)
+    bp = sub.add_parser("bridge", help="let your iMessage assistant use this Mac (see README)")
+    bp.add_argument("action", nargs="?", default="run", choices=["run", "install", "uninstall"],
+                    help="run in the foreground (default), or install/uninstall as a login agent")
+    bp.set_defaults(fn=cmd_bridge)
     args = p.parse_args(argv)
     return args.fn(args)
 
