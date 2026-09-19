@@ -4,7 +4,7 @@ Invariants:
 - The live database is never opened. chat.db and its -wal / -shm sidecars are
   copied into a private temp dir and the copy is opened with a read-only URI.
   Uncheckpointed messages live in the -wal file, so copying it matters.
-- Messages.app is never touched (no scrolling, no AppleScript).
+- Messages.app is never touched here (sending lives in imessage_send.py, behind the gate).
 - Message text comes from `text`, falling back to decoding `attributedBody`
   (see typedstream.py).
 """
@@ -50,6 +50,23 @@ class ChatNotFound(MessagesError):
 # --------------------------------------------------------------------------- snapshot
 
 
+def _clone_or_copy(src: Path, dst: Path) -> None:
+    """APFS clonefile(2) (instant, copy-on-write) with a plain copy as fallback.
+
+    chat.db is often hundreds of MB, and the bridge re-snapshots it every time it
+    changes, so a real copy each time would be slow and churn the disk.
+    """
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.clonefile(os.fsencode(src), os.fsencode(dst), 0) == 0:
+            return
+    except (OSError, AttributeError):
+        pass
+    shutil.copyfile(src, dst)
+
+
 class Snapshot:
     """Private read-only copy of chat.db, refreshed only when the source changes."""
 
@@ -93,7 +110,7 @@ class Snapshot:
             for suffix in ("", *SIDECARS):
                 src = Path(f"{self.source}{suffix}")
                 if src.exists():
-                    shutil.copyfile(src, new / f"chat.db{suffix}")
+                    _clone_or_copy(src, new / f"chat.db{suffix}")
         except PermissionError as e:
             shutil.rmtree(new, ignore_errors=True)
             raise MessagesError(
@@ -380,6 +397,7 @@ class MessagesStore:
             parts = self._participants(con, r["id"])
             yield {
                 "id": r["id"],
+                "guid": r["guid"],
                 "name": self._chat_name(r, parts),
                 "identifier": r["chat_identifier"],
                 "service": r["service_name"],
@@ -476,6 +494,29 @@ class MessagesStore:
                 names = {c["id"]: c["name"] for c in self._chats(con)}
         log.info("search %s -> %d hits", redact(text), len(hits))
         return [{**asdict(m), "chat_name": names.get(m.chat_id)} for m in hits]
+
+    def max_rowid(self) -> int:
+        with self._con() as con:
+            return con.execute("SELECT COALESCE(MAX(ROWID), 0) FROM message").fetchone()[0]
+
+    def messages_after(self, rowid: int, chat_ids: list[int], limit: int = 200) -> list[Message]:
+        """Messages (from anyone, including me) in `chat_ids` with ROWID > rowid, oldest first."""
+        if not chat_ids:
+            return []
+        marks = ",".join("?" * len(chat_ids))
+        with self._con() as con:
+            rows = con.execute(_MSG_SELECT + f" AND m.ROWID > ? AND cmj.chat_id IN ({marks})"
+                               " ORDER BY m.ROWID ASC LIMIT ?", [rowid, *chat_ids, limit]).fetchall()
+            return [self._message(r) for r in rows]
+
+    def find_chat(self, chat: str | int) -> dict:
+        with self._con() as con:
+            return self.resolve_chat(con, chat)
+
+    def chats_with(self, handle_or_name: str) -> list[dict]:
+        """Every 1:1 chat with one person (a phone number, email, or contact name), newest first."""
+        with self._con() as con:
+            return [c for c in self._chats(con) if not c["is_group"] and self._chat_matches(c, handle_or_name)]
 
     def _read_cursor(self) -> int | None:
         if not self.cursor_path or not self.cursor_path.exists():

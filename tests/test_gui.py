@@ -124,6 +124,7 @@ SIDE_EFFECT_ARGS = {
     "gui_scroll": {"app": "Mail", "direction": "down"},
     "claude_web_send": {"prompt": "hi"},
     "ask_claude": {"prompt": "hi", "mode": "desktop"},
+    "messages_send": {"to": "Alice", "text": "on my way"},
 }
 NOT_GATED = {"confirm_action", "cancel_action", "messages_whats_new"}  # whats_new only moves a local cursor
 
@@ -135,7 +136,18 @@ def test_every_side_effect_tool_requires_confirmation(driver_factory, tmp_path):
         def claude_send(self, *a):
             raise AssertionError("browser used before confirmation")
 
-    server = create_server(Config(home=tmp_path), gui=d, browser=NoBrowser())
+    class NoSender:
+        def __getattr__(self, name):
+            raise AssertionError("Messages used before confirmation")
+
+    from chatdb_fixture import ChatDB
+    from instinct.adapters.messages import MapResolver, MessagesStore
+
+    db = ChatDB(tmp_path / "chat.db")
+    db.chat("+18055550100", [db.handle("+18055550100")])
+    db.commit()
+    store = MessagesStore(tmp_path / "chat.db", MapResolver({"8055550100": "Alice"}))
+    server = create_server(Config(home=tmp_path), gui=d, browser=NoBrowser(), messages=store, sender=NoSender())
 
     async def go():
         async with Client(server) as c:
