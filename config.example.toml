@@ -20,7 +20,7 @@ headless = true         # false = headed but launched in the background, never a
 response_timeout_s = 180
 
 [claude]
-default_mode = "api"   # api | cli | web | desktop
+default_mode = "cli"   # api (needs ANTHROPIC_API_KEY) | cli (your `claude` login) | web | desktop
 model = "claude-opus-5"
 max_tokens = 16000
 claude_cli = "claude"
@@ -31,3 +31,11 @@ cua_driver_path = ""    # empty = auto-detect
 [safety]
 pending_ttl_s = 600
 log_message_bodies = false
+
+[bridge]                 # `uv run instinct bridge`: let an assistant you text (e.g. Instinct AI) use this Mac
+chats = []               # e.g. ["+15555550123"]; phone/email/contact name/"chat:N" of the thread to watch
+trigger = "@mac"         # messages must start with this
+approval_timeout_s = 600 # side effects wait this long for your "ok <code>" reply
+max_tasks_per_hour = 20
+session_idle_min = 30    # follow-ups within this window continue the same Claude session
+model = ""               # empty = your Claude Code default

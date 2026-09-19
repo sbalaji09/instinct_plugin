@@ -14,6 +14,8 @@ Status as of 2026-09-18, on macOS 26.2 (25C56), Apple Silicon, Python 3.12, MCP 
 | Browser lane | **Real headless Chrome** over CDP against a local fake claude.ai page: types into the contenteditable box, clicks Send, waits for streaming to end, reads the reply. Also tested: the Canvas cookie transport (`while(1);` prefix plus pagination) and clean Chrome shutdown. |
 | `ask_claude` cli | **Live** call to `claude -p` (Claude Code 2.1.277) returned "pong". |
 | `ask_claude` api | Request shape only (fake client). No `ANTHROPIC_API_KEY` in the build environment. |
+| iMessage bridge | Unit/integration on a fixture chat.db with a fake sender and agent: trigger parsing, no history replay, its own replies never re-trigger, rate limit, approvals accepted only from an exact `ok <code>` sent by me (not the assistant, not a near-miss), and timeouts count as denied. **Live** (2026-09-19): the Agent SDK with the real `claude` CLI and instinct-mcp answered a read-only question from the real chat.db in about 13 s. A `messages_send` proposal reached the approval hook with the gate's summary, and denying it sent nothing. |
+| `messages_send` | Gated in the coverage test. Resolves names to the chat guid and falls back to a participant handle. On this Mac, AppleScript addressed `chat id "any;-;<handle>"` for a real 1:1 thread and Automation → Messages was allowed. A real send wasn't done during the build. |
 | GUI lane | Against a fake `cua-driver mcp` server with the documented tool names and shapes: `delivery_mode` forced to background, foreground escalation and `background_unavailable` raise without retrying, forbidden tools are blocked, key combos map to `hotkey`, and screenshots work. |
 
 ## Not yet verified on real data
@@ -38,6 +40,12 @@ These need permissions or logins the build environment didn't have. Run
   Finder first (native AppKit, accessibility-friendly), then Claude desktop.
 
 ## Expected to be flaky
+
+- **Bridge ↔ the assistant.** The bridge only sees what the assistant actually
+  texts. Whether Instinct AI reliably starts requests with `@mac` depends on it
+  following your instructions. If it paraphrases, type `@mac …` yourself.
+- **Bridge latency.** Polling is every 2 s. Each request starts a fresh `claude`
+  process plus instinct-mcp (about 5–10 s of overhead) before the model works.
 
 - **claude.ai selectors.** The DOM changes without notice. Completion is
   detected three ways (a `data-is-streaming` marker, the Stop button going

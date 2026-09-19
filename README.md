@@ -1,10 +1,12 @@
 # Instinct
 
-Local macOS toolkit that lets an AI agent read your texts, check Canvas, and ask
-Claude, **without touching what you're doing**: no cursor movement, no focus
+Local macOS toolkit that lets an AI agent read and send your texts, check Canvas,
+and ask Claude, **without touching what you're doing**: no cursor movement, no focus
 stealing, no raised windows, no Space switches. Everything runs on your Mac and
 is exposed as tools over MCP, so Claude Code, Claude Desktop, Cursor, or your
-own agent loop can use it.
+own agent loop can use it. The **iMessage bridge** extends this to an assistant you
+text, such as Instinct AI: it sends `@mac …` in your thread, and your Mac does the work
+and texts back.
 
 ## How it picks a path
 
@@ -45,6 +47,7 @@ Grant them to that app, then quit and reopen it.
 |---|---|---|
 | Full Disk Access | Messages (reading chat.db) | Privacy & Security → Full Disk Access |
 | Contacts (optional) | Showing names instead of phone numbers | Covered by Full Disk Access (reads the local AddressBook DB); or `uv run instinct contacts-auth` |
+| Automation → Messages | `messages_send` and the bridge | macOS asks the first time a text is sent |
 | Accessibility + Screen Recording | GUI lane only | Grant to **CuaDriver.app** (`cua-driver permissions grant`) |
 
 ### Canvas
@@ -114,11 +117,66 @@ works the same way: stdio transport, command `uv --directory <repo> run instinct
 `mcp__instinct__confirm_action` to an allow-list or "always allow" it. That
 per-call prompt is how *you* approve each side effect.
 
+## Text your Mac: the iMessage bridge
+
+Assistants that live in Messages, like **Instinct AI**, can't call a local MCP server.
+They can send a text, though. `instinct bridge` watches the thread you have with the
+assistant. When a message starts with `@mac`, it runs the request on this Mac with
+Claude Code (your `claude` login, with only Instinct's tools: no shell, files or web)
+and texts the answer back into the same thread.
+
+```
+Instinct:  @mac what did Sam last say about Saturday?
+you (Mac): 🖥️ Sam, Wed 9:14 PM: "down for sat, will confirm time". Nothing since.
+Instinct:  @mac text Sam "what time works saturday?"
+you (Mac): 🖥️ Approval needed: Text Sam Lee (+1555…) from your Messages account:
+           what time works saturday?
+           Reply "ok 4821" to allow or "no 4821" to cancel (expires in 10 min).
+you:       ok 4821
+you (Mac): 🖥️ Sent.
+```
+
+Setup:
+
+1. In `~/.instinct/config.toml`, add the assistant's number:
+
+   ```toml
+   [bridge]
+   chats = ["+15555550123"]   # the number you text your assistant at
+   ```
+
+2. Run it: `uv run instinct bridge` (keep the terminal open), or
+   `uv run instinct bridge install` to run it as a login agent. The install
+   command prints the Python binary that needs Full Disk Access, because launchd
+   doesn't inherit your terminal's permissions.
+3. Tell the assistant once, for example: *"You can now use my Mac. When you need my
+   texts, Canvas, Claude, or an app, send a message that starts with `@mac` and
+   then the request in plain English. My Mac replies in this thread with a 🖥️."*
+   You can also type `@mac …` yourself.
+
+How it's kept safe:
+
+- Only the configured chats are watched, and only messages that start with the
+  trigger count. History isn't replayed, the bridge ignores its own 🖥️ messages,
+  and it runs at most 20 tasks an hour (`max_tasks_per_hour`).
+- **Reads run without asking, and their results leave your Mac.** A reply goes to
+  the assistant's servers like any text you send it. Only point the bridge at an
+  assistant you'd paste that information into anyway.
+- **Every side effect needs you.** Sending a text, clicking in an app, or sending
+  to claude.ai goes through the same `confirm_action` gate. The bridge texts you
+  the gate's summary and a random 4-digit code. The action runs only when *you*
+  reply exactly `ok <code>`. The assistant can't approve anything, because its
+  messages aren't from you, and a request that goes unanswered for 10 minutes is
+  cancelled.
+- Follow-ups within 30 minutes continue the same Claude session, so "@mac now
+  text her that" works.
+
 ## Tools
 
 | Tool | Kind |
 |---|---|
 | `messages_list_chats(query?, limit)` · `messages_read_thread(chat, since?, limit)` · `messages_search(text, chat?, since?, limit)` · `messages_whats_new(mark_seen)` | read |
+| `messages_send(to, text)` | **gated** |
 | `canvas_upcoming(days)` · `canvas_todo()` · `canvas_course_assignments(course, include_past?)` · `canvas_announcements(since)` | read |
 | `ask_claude(prompt, mode)` | read for api/cli; **gated** for web/desktop |
 | `claude_web_send(prompt, conversation_url?)` | **gated** |
@@ -138,8 +196,11 @@ per-call prompt is how *you* approve each side effect.
 - **Read vs act.** Side-effecting tools only *propose*. They return an
   `action_id` and a plain-language summary. Only `confirm_action(action_id)`
   executes the action. Ids are random, single-use, and expire after 10 minutes.
-- **Read-only data.** chat.db and its `-wal`/`-shm` files are copied to a
-  private temp dir and opened with `mode=ro`. The live database is never opened.
+- **Read-only data.** chat.db and its `-wal`/`-shm` files are cloned (APFS
+  copy-on-write) into a private temp dir and opened with `mode=ro`. The live
+  database is never opened. Sending goes through Messages' own AppleScript
+  `send` command, with the text passed as an argument rather than spliced into
+  the script, and only after `confirm_action`.
 - **No secrets on disk or in logs.** Tokens live in env vars or the Keychain.
   `~/.instinct/instinct.log` redacts message bodies and queries unless you set
   `[safety].log_message_bodies = true`.
@@ -158,7 +219,7 @@ The headless-Chrome integration test drives a local fake claude.ai page. Skip it
 with `INSTINCT_SKIP_CHROME=1`.
 
 Layout: `src/instinct/` (`adapters/messages.py`, `typedstream.py`, `canvas.py`,
-`browser.py`, `gui.py`, `claude.py`, `router.py`, `safety.py`, `selectors.py`,
+`imessage_send.py`, `browser.py`, `gui.py`, `claude.py`, `bridge.py`, `router.py`, `safety.py`, `selectors.py`,
 `config.py`, `server.py`, `doctor.py`, `cli.py`), `tests/`, `scripts/`.
 See [NOTES.md](NOTES.md) for what's verified, what's flaky, and what depends on
 private macOS APIs.
