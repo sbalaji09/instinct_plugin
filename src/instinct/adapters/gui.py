@@ -11,3 +11,11 @@ def doctor_check(cfg):
 
 def find_driver(cfg):
     return None
+
+
+def get_driver(cfg):
+    raise RuntimeError("GUI lane not integrated yet (build step 7)")
+
+
+def ask_claude_desktop(driver, prompt: str) -> dict:
+    raise RuntimeError("GUI lane not integrated yet (build step 7)")

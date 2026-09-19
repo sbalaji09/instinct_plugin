@@ -150,6 +150,9 @@ class CanvasClient:
                 log.warning("canvas %s (attempt %d), retrying in %.1fs", r.status_code, attempt + 1, delay)
                 self.sleep(delay)
                 continue
+            if 300 <= r.status_code < 400:
+                raise CanvasAuthError("Canvas redirected the request (usually to a login page): the session "
+                                      "has expired. Run `uv run instinct login canvas` or use a token.")
             if r.status_code == 401:
                 raise CanvasAuthError("Canvas rejected the credentials (401). Re-create the token and run "
                                       "`uv run instinct set-canvas-token`, or check `instinct doctor`.")

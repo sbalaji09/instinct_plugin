@@ -47,7 +47,7 @@ class BrowserConfig:
 class ClaudeConfig:
     default_mode: str = "api"
     model: str = "claude-opus-5"
-    max_tokens: int = 4096
+    max_tokens: int = 16000
     claude_cli: str = "claude"
 
 

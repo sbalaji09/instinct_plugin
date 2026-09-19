@@ -1,0 +1,28 @@
+<!doctype html>
+<html><body>
+<main id="thread"></main>
+<fieldset>
+  <div contenteditable="true" role="textbox" aria-label="Write your prompt to Claude" id="box"></div>
+  <button aria-label="Send message" id="send">↑</button>
+</fieldset>
+<script>
+  // Mimics claude.ai: reply container with data-is-streaming, a Stop button while streaming.
+  const thread = document.getElementById('thread');
+  document.getElementById('send').onclick = () => {
+    const prompt = document.getElementById('box').innerText;
+    document.getElementById('box').innerText = '';
+    const u = document.createElement('div'); u.textContent = prompt; thread.appendChild(u);
+    const stop = document.createElement('button'); stop.setAttribute('aria-label', 'Stop response');
+    stop.textContent = '■'; document.body.appendChild(stop);
+    setTimeout(() => {
+      const a = document.createElement('div'); a.setAttribute('data-is-streaming', 'true'); thread.appendChild(a);
+      const words = ('You said: ' + prompt + '. Here is a longer streamed answer in pieces.').split(' ');
+      let i = 0;
+      const t = setInterval(() => {
+        a.textContent += (i ? ' ' : '') + words[i++];
+        if (i === words.length) { clearInterval(t); a.setAttribute('data-is-streaming', 'false'); stop.remove(); }
+      }, 150);
+    }, 700);
+  };
+</script>
+</body></html>

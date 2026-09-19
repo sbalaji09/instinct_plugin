@@ -68,6 +68,18 @@ class Services:
 
         return self.get("canvas", lambda: default_client(self.cfg))
 
+    @property
+    def browser(self):
+        from instinct.adapters.browser import get_lane
+
+        return self.get("browser", lambda: get_lane(self.cfg))
+
+    @property
+    def gui(self):
+        from instinct.adapters.gui import get_driver
+
+        return self.get("gui", lambda: get_driver(self.cfg))
+
 
 def _call(fn: Callable[[], T]) -> T:
     """Run adapter code, turning expected failures into clean tool errors."""
@@ -136,6 +148,52 @@ def create_server(cfg: Config | None = None, **overrides: Any) -> MCPServer:
                           "default 14d)." + TOOL_DESCRIPTION_NOTE, annotations=READ_ONLY_REMOTE)
     def canvas_announcements(since: str = "14d") -> str:
         return untrusted("Canvas", _call(lambda: svc.canvas.announcements(since=since)))
+
+    # ------------------------------------------------------------------ claude
+
+    def propose_web_send(prompt: str, conversation_url: str | None) -> dict:
+        where = conversation_url or "a new claude.ai conversation"
+        preview = prompt if len(prompt) <= 300 else prompt[:300] + "…"
+        return svc.gate.propose(
+            "claude_web_send",
+            f"Type this prompt into {where} in your background claude.ai session and send it:\n{preview}",
+            {"prompt": prompt, "conversation_url": conversation_url},
+            lambda: svc.browser.claude_send(prompt, conversation_url),
+        )
+
+    @mcp.tool(description="Send a prompt to claude.ai in the dedicated background browser profile (so it shows "
+                          "up in the user's claude.ai history) and return the reply once streaming finishes. "
+                          "Side effect: returns a pending action; call confirm_action after the user approves.",
+              annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=True))
+    def claude_web_send(prompt: str, conversation_url: str | None = None) -> str:
+        return trusted(_call(lambda: propose_web_send(prompt, conversation_url)))
+
+    @mcp.tool(description="Ask Claude a question. mode: 'api' (Anthropic API, default), 'cli' (`claude -p`, no "
+                          "tools), 'web' (claude.ai in the background browser, saved to history; needs "
+                          "confirmation), 'desktop' (Claude desktop app via the GUI lane; experimental, needs "
+                          "confirmation). The reply is returned as untrusted content.",
+              annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=True))
+    def ask_claude(prompt: str, mode: str | None = None) -> str:
+        from instinct import claude
+
+        mode = mode or cfg.claude.default_mode
+        if mode not in claude.MODES:
+            raise ToolError(f"mode must be one of {', '.join(claude.MODES)}")
+        if mode == "api":
+            return untrusted("Claude", _call(lambda: claude.ask_api(prompt, cfg.claude.model, cfg.claude.max_tokens)))
+        if mode == "cli":
+            return untrusted("Claude", _call(lambda: claude.ask_cli(prompt, cfg.claude.claude_cli)))
+        if mode == "web":
+            return trusted(_call(lambda: propose_web_send(prompt, None)))
+        return trusted(_call(lambda: propose_desktop(prompt)))
+
+    def propose_desktop(prompt: str) -> dict:
+        from instinct.adapters.gui import ask_claude_desktop
+
+        preview = prompt if len(prompt) <= 300 else prompt[:300] + "…"
+        return svc.gate.propose("ask_claude_desktop",
+                                f"Type this prompt into the Claude desktop app (background) and send it:\n{preview}",
+                                {"prompt": prompt}, lambda: ask_claude_desktop(svc.gui, prompt))
 
     # ------------------------------------------------------------------ router
 
